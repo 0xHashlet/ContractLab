@@ -130,7 +130,7 @@ const contractABI = [
 ];
 
 // 合约地址 (替换为你的合约地址)
-const contractAddress = "0x4a8cB7C481919f852D6784B6eDc0dC92B37d927A";
+const contractAddress = "0xBdb2a78454e60859C4BD374C7c19329bEb0B823f";
 
 async function connectContract() {
   // 检查MetaMask是否安装
