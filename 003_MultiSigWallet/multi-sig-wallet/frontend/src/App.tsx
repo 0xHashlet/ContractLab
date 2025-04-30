@@ -8,6 +8,9 @@ function App() {
     nonce,
     handleSubmitTx,
     handleConfirmTx,
+    handleExecuteTx,
+    isExecuting,
+    threshold,
     transactionList,
     isSubmitting,
     refetchData,
@@ -64,10 +67,31 @@ function App() {
         <ul>
           {transactionList?.map((tx, index) => (
             <li key={index}>
-              <div className="tx-item" style={{display: 'flex'}}>
+              <div
+                className="tx-item"
+                style={{ display: "flex", alignItems: "center", marginTop: "20px" }}
+              >
                 <div>接收地址: {tx.to}--------</div>
                 <div>转账金额: {tx.value} wei--------</div>
-                <div>调用数据: {tx.data || '无'}</div>
+                <div>调用数据: {tx.data || "无"}--------</div>
+                <div>确认人数: {tx.confirmations || 0}--------</div>
+              </div>
+              <div>
+                {!tx.executed && (
+                  <button
+                    onClick={() => handleConfirmTx(index)}
+                    disabled={isConfirming || !address}
+                  >
+                    确认交易
+                  </button>
+                )}
+                <button
+                  onClick={() => handleExecuteTx(index)}
+                  disabled={isExecuting || !address || tx.executed || (tx.confirmations || 0) < (threshold || 0)}
+                >
+                  {tx.executed ? '已执行' : '执行交易'}
+                </button>
+                {isExecuting && <span>执行中...</span>}
               </div>
             </li>
           )) || <li>暂无交易</li>}

@@ -584,6 +584,12 @@ export function useMultiSigWallet() {
     isPending: isConfirming,
   } = useWriteContract();
 
+  const {
+    writeContract: executeTx,
+    data: executeTxData,
+    isPending: isExecuting,
+  } = useWriteContract();
+
   const { isLoading: isTxPending, isSuccess: isTxSuccess } =
     useWaitForTransactionReceipt({
       hash: submitTxData || confirmTxData,
@@ -616,14 +622,45 @@ export function useMultiSigWallet() {
     [confirmTx]
   );
 
+  
+
+  const {
+    data: threshold,
+    error: thresholdErr,
+    refetch: refetchThreshold,
+  } = useReadContract({
+    address: MULTISIG_ADDRESS,
+    abi: MULTISIG_ABI,
+    functionName: 'threshold',
+  });
+
+  const handleExecuteTx = useCallback(
+    (txId: number) => {
+      executeTx({
+        address: MULTISIG_ADDRESS,
+        abi: MULTISIG_ABI,
+        functionName: 'executeTransaction',
+        args: [txId],
+      });
+    },
+    [executeTx]
+  );
+
   return {
     nonce,
+    threshold,
     transactionList,
-    refetchData,
+    refetchData: () => {
+      refetchNonce();
+      refetchTxs();
+      refetchThreshold();
+    },
     handleSubmitTx,
     handleConfirmTx,
+    handleExecuteTx,
     isSubmitting,
     isConfirming,
+    isExecuting,
     isTxPending,
     isTxSuccess,
     address,
