@@ -114,7 +114,7 @@ contract MultiSigWallet is AccessControl {
         notExecuted(_proposalId)
     {
         require(!confirmations[_proposalId][msg.sender], "Already confirmed");
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Not authorized");
+        require(hasRole(PROPOSER_ROLE, msg.sender), "Not authorized");
         
         confirmations[_proposalId][msg.sender] = true;
         transactions[_proposalId].confirmations++;
@@ -150,10 +150,24 @@ contract MultiSigWallet is AccessControl {
     }
 
     /**
-     * @dev 获取当前交易提案总数
-     * @return 交易提案总数
+     * @dev 获取所有交易提案列表
+     * @return 包含所有交易提案的数组
      */
-    function getTransactionCount() external view returns (uint256) {
-        return nonce;
+    function getAllTransactions() external view returns (Transaction[] memory) {
+        Transaction[] memory allTxs = new Transaction[](nonce);
+        for(uint256 i = 0; i < nonce; i++) {
+            allTxs[i] = transactions[i];
+        }
+        return allTxs;
     }
+
+    /**
+     * @dev 允许合约接收以太币
+     */
+    receive() external payable {}
+
+    /**
+     * @dev 允许合约通过fallback接收以太币
+     */
+    fallback() external payable {}
 }
