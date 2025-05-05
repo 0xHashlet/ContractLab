@@ -550,7 +550,7 @@ npx hardhat compile
 npx hardhat node
 
 # 新终端部署合约
-npx hardhat run scripts/deploy.js --network localhost
+npx hardhat run scripts/deploy.ts --network localhost
 ```
 
 五、部署上线

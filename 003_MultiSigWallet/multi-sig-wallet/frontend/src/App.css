@@ -40,3 +40,111 @@
 .read-the-docs {
   color: #888;
 }
+
+
+/* App.css */
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 16px;
+}
+
+.section {
+  background-color: #f3f4f6;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin: 16px 0;
+}
+
+.subtitle {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.input {
+  border: 1px solid #e5e7eb;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.button {
+  background-color: #3b82f6;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+}
+
+.pending {
+  color: #f59e0b;
+}
+
+.success {
+  color: #10b981;
+}
+
+.transaction {
+  margin-bottom: 8px;
+}
+
+.tx-item {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.confirm-button {
+  background-color: #f59e0b;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+  margin-right: 8px;
+}
+
+.execute-button {
+  background-color: #10b981;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.executed {
+  background-color: #6b7280;
+}
+
+.executing {
+  color: #3b82f6;
+}
+
+.refresh-button {
+  background-color: #6b7280;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+.read-the-docs {
+  color: #888;
+}
+
+.button:disabled,
+.confirm-button:disabled,
+.execute-button:disabled,
+.refresh-button:disabled {
+    opacity: 0.5; /* 设置为半透明 */
+    cursor: not-allowed; /* 更改鼠标指针样式 */
+}
+.read-the-docs {
+  color: #888;
+}

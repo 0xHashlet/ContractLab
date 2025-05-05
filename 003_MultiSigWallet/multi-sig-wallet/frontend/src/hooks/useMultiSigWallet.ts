@@ -4,6 +4,7 @@ import {
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
+  Config,
 } from "wagmi";
 
 // TODO: 替换为你的多签钱包合约地址和ABI
@@ -547,28 +548,36 @@ export function useMultiSigWallet() {
   });
 
   if (nonceErr) {
-    console.error( "nonceErr", nonceErr,);
+    console.error("nonceErr", nonceErr);
+  }
+
+  interface Transaction {
+    to: `0x${string}`;
+    value: bigint;
+    data: `0x${string}`;
+    executed: boolean;
+    confirmations: number;
   }
 
   const {
     data: transactionList,
     error: TxsErr,
     refetch: refetchTxs,
-  } = useReadContract({
+  } = useReadContract<
+    typeof MULTISIG_ABI, // 泛型参数1：合约 ABI 类型
+    "getAllTransactions", // 泛型参数2：函数名
+    [], // 泛型参数3：函数参数类型（无参数则空数组）
+    Config, // 泛型参数4：配置类型（可选，有默认值）
+    Transaction[] // 泛型参数5：返回类型
+  >({
     address: MULTISIG_ADDRESS,
     abi: MULTISIG_ABI,
     functionName: "getAllTransactions",
   });
 
   if (nonceErr) {
-    console.error( "get Tx list Err", TxsErr,);
+    console.error("get Tx list Err", TxsErr);
   }
-
-
-  const refetchData = () => {
-    refetchNonce();
-    refetchTxs();
-  };
 
   // 发起多签交易（示例）
   const {
@@ -584,11 +593,8 @@ export function useMultiSigWallet() {
     isPending: isConfirming,
   } = useWriteContract();
 
-  const {
-    writeContract: executeTx,
-    data: executeTxData,
-    isPending: isExecuting,
-  } = useWriteContract();
+  const { writeContract: executeTx, isPending: isExecuting } =
+    useWriteContract();
 
   const { isLoading: isTxPending, isSuccess: isTxSuccess } =
     useWaitForTransactionReceipt({
@@ -622,16 +628,16 @@ export function useMultiSigWallet() {
     [confirmTx]
   );
 
-  
-
-  const {
-    data: threshold,
-    error: thresholdErr,
-    refetch: refetchThreshold,
-  } = useReadContract({
+  const { data: threshold, refetch: refetchThreshold } = useReadContract<
+    typeof MULTISIG_ABI, 
+    "threshold",
+    [], 
+    Config,
+    number 
+  >({
     address: MULTISIG_ADDRESS,
     abi: MULTISIG_ABI,
-    functionName: 'threshold',
+    functionName: "threshold",
   });
 
   const handleExecuteTx = useCallback(
@@ -639,7 +645,7 @@ export function useMultiSigWallet() {
       executeTx({
         address: MULTISIG_ADDRESS,
         abi: MULTISIG_ABI,
-        functionName: 'executeTransaction',
+        functionName: "executeTransaction",
         args: [txId],
       });
     },
