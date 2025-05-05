@@ -13,10 +13,9 @@ Dapp实战案例003：从零部署 2/3 多签钱包并实现前端交互
 1. [环境准备](#一、环境准备)
 2. [开发思路](#二、开发思路)
 3. [合约开发](#三、合约开发)
-4. [本地测试](#四、本地测试)
+4. [测试案例](#四、测试案例)
 5. [前端开发](#五、前端开发)
 6. [部署上线](#六、部署上线)
-7. [安全规范](#七、安全规范)
 
 ---
 
@@ -127,6 +126,7 @@ flowchart TD
 
 ## 三、合约开发
 3.1 核心合约代码
+```ts
 // contracts/MultiSigWallet.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
@@ -280,11 +280,15 @@ contract MultiSigWallet is AccessControl {
     }
 
     /**
-     * @dev 获取当前交易提案总数
-     * @return 交易提案总数
+     * @dev 获取所有交易提案列表
+     * @return 包含所有交易提案的数组
      */
-    function getTransactionCount() external view returns (uint256) {
-        return nonce;
+    function getAllTransactions() external view returns (Transaction[] memory) {
+        Transaction[] memory allTxs = new Transaction[](nonce);
+        for(uint256 i = 0; i < nonce; i++) {
+            allTxs[i] = transactions[i];
+        }
+        return allTxs;
     }
 
     /**
@@ -297,9 +301,12 @@ contract MultiSigWallet is AccessControl {
      */
     fallback() external payable {}
 }
+```
 
-## 四、本地测试
+## 四、测试案例
 4.1 测试脚本
+```ts
+// test/MultiSigWallet.test.ts
 // 导入必要的依赖
 import { expect } from "chai";
 import { ethers } from "hardhat";
@@ -394,7 +401,7 @@ describe("MultiSigWallet", function () {
     ).to.be.revertedWith("Insufficient confirmations");
   });
 });
-
+```
 
 ## 五、前端开发
 
@@ -419,28 +426,39 @@ npm install viem wagmi @tanstack/react-query @rainbow-me/rainbowkit
 main.tsx 作为前端应用的入口，负责初始化 Wagmi、RainbowKit、React Query，并包裹整个 App 组件。核心结构如下：
 
 ```tsx
+// 导入React相关依赖
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
 // 导入RainbowKit相关依赖 - Web3钱包连接UI组件库
+import '@rainbow-me/rainbowkit/styles.css'
 import { getDefaultConfig, RainbowKitProvider } from '@rainbow-me/rainbowkit'
 
 // 导入Wagmi相关依赖 - 以太坊React Hooks库
 import { WagmiProvider } from 'wagmi'
 
 // 导入支持的区块链网络
-import { mainnet, polygon, optimism, arbitrum, base, sepolia } from 'wagmi/chains'
+import { mainnet, polygon, optimism, arbitrum, base, sepolia, hardhat } from 'wagmi/chains'
 
 // 导入React Query相关依赖 - 数据请求状态管理
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // 配置Wagmi客户端
+const hardhatChain = {
+  ...hardhat,
+  rpcUrls: {
+    default: {
+      http: [import.meta.env.VITE_PUBLIC_HARDHAT_RPC!] // 添加非空断言
+    }
+  }
+} as const;
+
 const config = getDefaultConfig({
   appName: 'MultiSigWallet app', // 应用名称
   projectId: 'YOUR_PROJECT_ID',   // WalletConnect项目ID
-  chains: [mainnet, polygon, optimism, arbitrum, base, sepolia], // 支持的链
+  chains: [mainnet, polygon, optimism, arbitrum, base, sepolia, hardhatChain], // 使用修改后的链配置
 })
 
 // 创建React Query客户端实例
@@ -461,6 +479,7 @@ createRoot(document.getElementById('root')!).render(
     </WagmiProvider>
   </StrictMode>,
 )
+
 ```
 
 ### 5.4 本地网络配置（Hardhat）
@@ -478,67 +497,995 @@ VITE_PUBLIC_CONTRACT_ADDRESS="0x5FbDB2315678afecb367f032d93F642f64180aa3"
 ---
 
 4.3 钱包交互界面
-// src/components/WalletUI.tsx
-import { useState } from 'react';
-import { ethers } from 'ethers';
 
-export default function WalletUI() {
-  const [transactions, setTransactions] = useState([]);
-  const [newTx, setNewTx] = useState({ to: '', value: '' });
+```tsx
+// /src/App.tsx
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import "./App.css";
+import { useMultiSigWallet } from "./hooks/useMultiSigWallet";
+import { useState } from "react";
 
-  // 提交交易处理流程
-const submitTransaction = async () => {
-    // 前置条件检查
-    if (!walletAddress || !provider) return;
-    
-    try {
-      const signer = provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, contractABI, signer);
-      
-      const tx = await contract.submitTransaction(
-        newTx.to,
-        ethers.parseEther(newTx.value),
-        '0x'
-      );
-      await tx.wait();
-      
-      // 刷新交易列表
-      fetchTransactions();
-    } catch (error) {
-      console.error("提交失败:", error);
-    }
-  };
+function App() {
+  const {
+    nonce,
+    handleSubmitTx,
+    handleConfirmTx,
+    handleExecuteTx,
+    isExecuting,
+    threshold,
+    transactionList,
+    isSubmitting,
+    refetchData,
+    isConfirming,
+    isTxPending,
+    isTxSuccess,
+    address,
+    chain,
+  } = useMultiSigWallet();
+
+  const [to, setTo] = useState("");
+  const [value, setValue] = useState("");
+  const [data, setData] = useState("");
 
   return (
-    <div>
-      <h2>发起新交易</h2>
-      <input 
-        placeholder="目标地址"
-        value={newTx.to}
-        onChange={(e) => setNewTx({...newTx, to: e.target.value})}
-      />
-      <input 
-        type="number"
-        placeholder="金额 (ETH)"
-        value={newTx.value}
-        onChange={(e) => setNewTx({...newTx, value: e.target.value})}
-      />
-      <button onClick={submitTransaction}>提交</button>
-
-      <h2>交易记录</h2>
-      <ul>
-        {transactions.map((tx) => (
-          <li key={tx.id}>
-            {tx.to} - {tx.value} ETH - {tx.status}
-          </li>
-        ))}
-      </ul>
+    <div className="container">
+      <h1 className="title">多签钱包前端</h1>
+      <ConnectButton />
+      <div className="section">
+        <h2 className="subtitle">合约信息</h2>
+        <div>当前账户: {address || "未连接"}</div>
+        <div>当前网络: {chain?.name || "未知"}</div>
+      </div>
+      <div className="section">
+        <h2 className="subtitle">发起多签交易</h2>
+        <input
+          className="input"
+          placeholder="目标地址"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="金额（wei）"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <input
+          className="input"
+          placeholder="数据（可选）"
+          value={data}
+          onChange={(e) => setData(e.target.value)}
+        />
+        <button
+          className="button"
+          onClick={() => handleSubmitTx(to, value, data)}
+          disabled={isSubmitting || !address}
+        >
+          发起交易
+        </button>
+        {isTxPending && <span className="pending">交易提交中...</span>}
+        {isTxSuccess && <span className="success">交易已上链！</span>}
+      </div>
+      <div className="section">
+        <h2 className="subtitle">待确认交易</h2>
+        <div>nonce: {nonce != null ? String(nonce) : "0"}</div>
+        <ul>
+          {transactionList?.map((tx, index) => (
+            <li key={index} className="transaction">
+              <div className="tx-item">
+                <div>接收地址: {tx.to}--------</div>
+                <div>转账金额: {tx.value} wei--------</div>
+                <div>调用数据: {tx.data || "无"}--------</div>
+                <div>确认人数: {tx.confirmations || 0}--------</div>
+              </div>
+              <div>
+                {!tx.executed && (
+                  <button
+                    className="confirm-button"
+                    onClick={() => handleConfirmTx(index)}
+                    disabled={isConfirming || !address}
+                  >
+                    确认交易
+                  </button>
+                )}
+                <button
+                  className={`execute-button ${tx.executed ? 'executed' : ''}`}
+                  onClick={() => handleExecuteTx(index)}
+                  disabled={isExecuting || !address || tx.executed || (tx.confirmations || 0) < (threshold || 0)}
+                >
+                  {tx.executed ? '已执行' : '执行交易'}
+                </button>
+                {isExecuting && <span className="executing">执行中...</span>}
+              </div>
+            </li>
+          )) || <li>暂无交易</li>}
+        </ul>
+        <button className="refresh-button" onClick={() => refetchData()}>刷新交易列表</button>
+      </div>
     </div>
   );
 }
 
-4.4 注意事项
-如果nonce没有显示可能需要清理缓存
+export default App;
+```
+
+
+```tsx
+// /src/hooks/useMultiSigWallet.ts
+import { useCallback } from "react";
+import {
+  useAccount,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+  Config,
+} from "wagmi";
+
+// TODO: 替换为你的多签钱包合约地址和ABI
+const MULTISIG_ADDRESS = import.meta.env.VITE_PUBLIC_CONTRACT_ADDRESS;
+const MULTISIG_ABI = [
+  {
+    inputs: [
+      {
+        internalType: "address[]",
+        name: "_owners",
+        type: "address[]",
+      },
+      {
+        internalType: "uint256",
+        name: "_threshold",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [],
+    name: "AccessControlBadConfirmation",
+    type: "error",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "account",
+        type: "address",
+      },
+      {
+        internalType: "bytes32",
+        name: "neededRole",
+        type: "bytes32",
+      },
+    ],
+    name: "AccessControlUnauthorizedAccount",
+    type: "error",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "proposalId",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        internalType: "address",
+        name: "confirmator",
+        type: "address",
+      },
+    ],
+    name: "Confirmed",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "proposalId",
+        type: "uint256",
+      },
+    ],
+    name: "Executed",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "proposalId",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        internalType: "address",
+        name: "proposer",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+      {
+        indexed: false,
+        internalType: "uint256",
+        name: "value",
+        type: "uint256",
+      },
+      {
+        indexed: false,
+        internalType: "bytes",
+        name: "data",
+        type: "bytes",
+      },
+    ],
+    name: "ProposalCreated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+      {
+        indexed: true,
+        internalType: "bytes32",
+        name: "previousAdminRole",
+        type: "bytes32",
+      },
+      {
+        indexed: true,
+        internalType: "bytes32",
+        name: "newAdminRole",
+        type: "bytes32",
+      },
+    ],
+    name: "RoleAdminChanged",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "account",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "sender",
+        type: "address",
+      },
+    ],
+    name: "RoleGranted",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "account",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "sender",
+        type: "address",
+      },
+    ],
+    name: "RoleRevoked",
+    type: "event",
+  },
+  {
+    stateMutability: "payable",
+    type: "fallback",
+  },
+  {
+    inputs: [],
+    name: "DEFAULT_ADMIN_ROLE",
+    outputs: [
+      {
+        internalType: "bytes32",
+        name: "",
+        type: "bytes32",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "EXECUTOR_ROLE",
+    outputs: [
+      {
+        internalType: "bytes32",
+        name: "",
+        type: "bytes32",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "PROPOSER_ROLE",
+    outputs: [
+      {
+        internalType: "bytes32",
+        name: "",
+        type: "bytes32",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "_proposalId",
+        type: "uint256",
+      },
+    ],
+    name: "confirmTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+      {
+        internalType: "address",
+        name: "",
+        type: "address",
+      },
+    ],
+    name: "confirmations",
+    outputs: [
+      {
+        internalType: "bool",
+        name: "",
+        type: "bool",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "_proposalId",
+        type: "uint256",
+      },
+    ],
+    name: "executeTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "getAllTransactions",
+    outputs: [
+      {
+        components: [
+          {
+            internalType: "address",
+            name: "to",
+            type: "address",
+          },
+          {
+            internalType: "uint256",
+            name: "value",
+            type: "uint256",
+          },
+          {
+            internalType: "bytes",
+            name: "data",
+            type: "bytes",
+          },
+          {
+            internalType: "bool",
+            name: "executed",
+            type: "bool",
+          },
+          {
+            internalType: "uint256",
+            name: "confirmations",
+            type: "uint256",
+          },
+        ],
+        internalType: "struct MultiSigWallet.Transaction[]",
+        name: "",
+        type: "tuple[]",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+    ],
+    name: "getRoleAdmin",
+    outputs: [
+      {
+        internalType: "bytes32",
+        name: "",
+        type: "bytes32",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+      {
+        internalType: "address",
+        name: "account",
+        type: "address",
+      },
+    ],
+    name: "grantRole",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+      {
+        internalType: "address",
+        name: "account",
+        type: "address",
+      },
+    ],
+    name: "hasRole",
+    outputs: [
+      {
+        internalType: "bool",
+        name: "",
+        type: "bool",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "nonce",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+      {
+        internalType: "address",
+        name: "callerConfirmation",
+        type: "address",
+      },
+    ],
+    name: "renounceRole",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes32",
+        name: "role",
+        type: "bytes32",
+      },
+      {
+        internalType: "address",
+        name: "account",
+        type: "address",
+      },
+    ],
+    name: "revokeRole",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "_to",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "_value",
+        type: "uint256",
+      },
+      {
+        internalType: "bytes",
+        name: "_data",
+        type: "bytes",
+      },
+    ],
+    name: "submitTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "bytes4",
+        name: "interfaceId",
+        type: "bytes4",
+      },
+    ],
+    name: "supportsInterface",
+    outputs: [
+      {
+        internalType: "bool",
+        name: "",
+        type: "bool",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "threshold",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "",
+        type: "uint256",
+      },
+    ],
+    name: "transactions",
+    outputs: [
+      {
+        internalType: "address",
+        name: "to",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "value",
+        type: "uint256",
+      },
+      {
+        internalType: "bytes",
+        name: "data",
+        type: "bytes",
+      },
+      {
+        internalType: "bool",
+        name: "executed",
+        type: "bool",
+      },
+      {
+        internalType: "uint256",
+        name: "confirmations",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    stateMutability: "payable",
+    type: "receive",
+  },
+];
+
+export function useMultiSigWallet() {
+  const { address, chain } = useAccount();
+
+  const {
+    data: nonce,
+    error: nonceErr,
+    refetch: refetchNonce,
+  } = useReadContract({
+    address: MULTISIG_ADDRESS,
+    abi: MULTISIG_ABI,
+    functionName: "nonce",
+  });
+
+  if (nonceErr) {
+    console.error("nonceErr", nonceErr);
+  }
+
+  interface Transaction {
+    to: `0x${string}`;
+    value: bigint;
+    data: `0x${string}`;
+    executed: boolean;
+    confirmations: number;
+  }
+
+  const {
+    data: transactionList,
+    error: TxsErr,
+    refetch: refetchTxs,
+  } = useReadContract<
+    typeof MULTISIG_ABI, // 泛型参数1：合约 ABI 类型
+    "getAllTransactions", // 泛型参数2：函数名
+    [], // 泛型参数3：函数参数类型（无参数则空数组）
+    Config, // 泛型参数4：配置类型（可选，有默认值）
+    Transaction[] // 泛型参数5：返回类型
+  >({
+    address: MULTISIG_ADDRESS,
+    abi: MULTISIG_ABI,
+    functionName: "getAllTransactions",
+  });
+
+  if (nonceErr) {
+    console.error("get Tx list Err", TxsErr);
+  }
+
+  // 发起多签交易（示例）
+  const {
+    writeContract: submitTx,
+    error: subError,
+    data: submitTxData,
+    isPending: isSubmitting,
+  } = useWriteContract();
+
+  const {
+    writeContract: confirmTx,
+    data: confirmTxData,
+    isPending: isConfirming,
+  } = useWriteContract();
+
+  const { writeContract: executeTx, isPending: isExecuting } =
+    useWriteContract();
+
+  const { isLoading: isTxPending, isSuccess: isTxSuccess } =
+    useWaitForTransactionReceipt({
+      hash: submitTxData || confirmTxData,
+    });
+
+  const handleSubmitTx = useCallback(
+    (to: string, value: string, data: string) => {
+      submitTx({
+        address: MULTISIG_ADDRESS,
+        abi: MULTISIG_ABI,
+        functionName: "submitTransaction",
+        args: [to, value, data],
+      });
+      if (subError) {
+        console.error("Error submitting transaction:", subError);
+      }
+    },
+    [submitTx]
+  );
+
+  const handleConfirmTx = useCallback(
+    (txId: number) => {
+      confirmTx({
+        address: MULTISIG_ADDRESS,
+        abi: MULTISIG_ABI,
+        functionName: "confirmTransaction",
+        args: [txId],
+      });
+    },
+    [confirmTx]
+  );
+
+  const { data: threshold, refetch: refetchThreshold } = useReadContract<
+    typeof MULTISIG_ABI, 
+    "threshold",
+    [], 
+    Config,
+    number 
+  >({
+    address: MULTISIG_ADDRESS,
+    abi: MULTISIG_ABI,
+    functionName: "threshold",
+  });
+
+  const handleExecuteTx = useCallback(
+    (txId: number) => {
+      executeTx({
+        address: MULTISIG_ADDRESS,
+        abi: MULTISIG_ABI,
+        functionName: "executeTransaction",
+        args: [txId],
+      });
+    },
+    [executeTx]
+  );
+
+  return {
+    nonce,
+    threshold,
+    transactionList,
+    refetchData: () => {
+      refetchNonce();
+      refetchTxs();
+      refetchThreshold();
+    },
+    handleSubmitTx,
+    handleConfirmTx,
+    handleExecuteTx,
+    isSubmitting,
+    isConfirming,
+    isExecuting,
+    isTxPending,
+    isTxSuccess,
+    address,
+    chain,
+  };
+}
+```
+
+
+```css
+// App.css
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+
+/* App.css */
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 16px;
+}
+
+.section {
+  background-color: #f3f4f6;
+  padding: 16px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin: 16px 0;
+}
+
+.subtitle {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.input {
+  border: 1px solid #e5e7eb;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.button {
+  background-color: #3b82f6;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+  width: 100%;
+}
+
+.pending {
+  color: #f59e0b;
+}
+
+.success {
+  color: #10b981;
+}
+
+.transaction {
+  margin-bottom: 8px;
+}
+
+.tx-item {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.confirm-button {
+  background-color: #f59e0b;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+  margin-right: 8px;
+}
+
+.execute-button {
+  background-color: #10b981;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.executed {
+  background-color: #6b7280;
+}
+
+.executing {
+  color: #3b82f6;
+}
+
+.refresh-button {
+  background-color: #6b7280;
+  color: white;
+  padding: 8px;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+.read-the-docs {
+  color: #888;
+}
+
+.button:disabled,
+.confirm-button:disabled,
+.execute-button:disabled,
+.refresh-button:disabled {
+    opacity: 0.5; /* 设置为半透明 */
+    cursor: not-allowed; /* 更改鼠标指针样式 */
+}
+.read-the-docs {
+  color: #888;
+}
+```
+
+
+
+## 六、部署上线
+5.1 部署脚本
+```typescript
+// scripts/deploy.ts
+import { ethers } from "hardhat";
+
+async function main() {
+  const [deployer] = await ethers.getSigners();
+  
+  console.log("Deploying with account:", deployer.address);
+
+  // 配置初始所有者和阈值
+  const owners: string[] = [
+    await deployer.getAddress(),
+    '0x3d5d9a6c9309b417e8a229ce30412b3cbf15d432', // 第二个所有者地址
+    '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'  // 第三个所有者地址
+  ];
+  const threshold: number = 2;
+
+  const MultiSigWallet = await ethers.getContractFactory("MultiSigWallet");
+  const multiSigWallet = await MultiSigWallet.deploy(owners, threshold);
+  
+  await multiSigWallet.waitForDeployment();
+  console.log("MultiSigWallet deployed to:", await multiSigWallet.getAddress());
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+```
+部署命令：
+```bash
+npx hardhat run scripts/deploy.ts --network sepolia
+```
+
+5.2 注意事项
+如果部署的是hardhat本地测试网，nonce没有显示可能需要清理缓存
 ```bash
 # 清理编译缓存
 npx hardhat clean
@@ -551,99 +1498,4 @@ npx hardhat node
 
 # 新终端部署合约
 npx hardhat run scripts/deploy.ts --network localhost
-```
-
-五、部署上线
-5.1 部署脚本
-// scripts/deploy.ts
-import { ethers } from "hardhat";
-
-async function main() {
-  const [deployer] = await ethers.getSigners();
-  
-  console.log("Deploying with:", deployer.address);
-  
-  const Contract = await ethers.getContractFactory("MultiSigWallet");
-  const wallet = await Contract.deploy(
-    [deployer.address, '0x...', '0x...'], // 替换为真实地址
-    2
-  );
-  
-  await wallet.waitForDeployment();
-  console.log("Deployed to:", await wallet.getAddress());
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
-部署命令：
-
-npx hardhat run scripts/deploy.ts --network sepolia
-六、安全规范
-6.1 关键安全措施
-​​权限控制​​
-modifier onlyOwner() {
-    require(isOwner(msg.sender), "Not authorized");
-    _;
-}
-​​交易验证​​
-require(txn.to != address(0), "Invalid transaction");
-require(!confirmations[_txId][msg.sender], "Already confirmed");
-​​防重放攻击​​
-uint public nonce;
-transactions[txId] = Transaction({...}, nonce++);
-6.2 安全建议
-使用OpenZeppelin的AccessControl
-添加交易超时机制
-实现紧急停止功能
-定期审计合约代码
-
-## 七、开发思路
-
-### 7.1 核心设计逻辑
-
-本多签钱包合约采用分层架构设计，主要包含以下核心组件：
-
-1. **所有者管理模块**
-   - 初始化时设置所有者地址列表和确认阈值
-   - 通过`onlyOwner`修饰器实现权限控制
-   - 使用映射结构高效验证所有者身份
-
-2. **交易生命周期管理**
-   - 提交交易：生成唯一交易ID并记录交易详情
-   - 确认交易：收集所有者签名，达到阈值后自动执行
-   - 执行交易：通过底层call方法完成资金转移
-
-3. **状态追踪机制**
-   - 使用`nonce`防止重放攻击
-   - 通过`executed`标记防止重复执行
-   - 实时更新确认状态映射
-
-### 7.2 安全考虑
-
-1. **权限控制**
-   - 所有关键操作都限制为仅所有者可调用
-   - 构造函数验证所有者地址唯一性
-   - 交易执行前验证确认数是否达标
-
-2. **输入验证**
-   - 检查目标地址不为零地址
-   - 验证交易ID有效性
-   - 防止重复确认
-
-3. **防御机制**
-   - 使用require语句进行前置条件检查
-   - 交易执行后验证call操作结果
-   - 通过事件日志追踪所有关键操作
-
-### 7.3 执行流程
-
-```mermaid
-flowchart TD
-    A[提交交易] --> B[收集确认]
-    B --> C{确认数≥阈值?}
-    C -->|是| D[执行交易]
-    C -->|否| B
-    D --> E[更新状态]
 ```
